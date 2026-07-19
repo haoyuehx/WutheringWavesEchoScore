@@ -1,18 +1,21 @@
 const API=String(globalThis.ECHO_SCORE_CONFIG?.apiBase||"").replace(/\/+$/,"");
 const KURO_API="https://api.kurobbs.com",DIRECT_PATHS=new Set(["/user/getSmsCodeForH5","/user/sdkLoginForH5"]);
 const GAME="3",CAPTCHA="ec4aa4174277d822d73f2442a165a2cd";
+const SESSION_KEY="wuthering-waves-echo-session-v1",SESSION_TTL=7*24*60*60*1000;
 const SERVERS={cn:"76402e5b20be2c39f095a152090afddc",overseas:"919752ae5ea09c1ced910dd668a63ffb"};
 const GRADES=["c","b","a","s","ss","sss"];
 const ROVER={1501:"漂泊者·衍射",1502:"漂泊者·衍射",1604:"漂泊者·湮灭",1605:"漂泊者·湮灭",1406:"漂泊者·气动",1408:"漂泊者·气动"};
 const state={token:"",accounts:[],account:null,characters:[],templates:null,captcha:null};
 const $=id=>document.getElementById(id);
-const el={loginView:$("loginView"),dashboard:$("dashboard"),form:$("loginForm"),phone:$("phone"),code:$("code"),send:$("sendCode"),login:$("login"),logout:$("logout"),account:$("account"),characters:$("characters"),scores:$("scores"),summary:$("summary"),echoes:$("echoes"),toast:$("toast"),loading:$("loading"),loadingText:$("loadingText")};
+const el={loginView:$("loginView"),dashboard:$("dashboard"),form:$("loginForm"),phone:$("phone"),code:$("code"),remember:$("remember"),send:$("sendCode"),login:$("login"),logout:$("logout"),account:$("account"),characters:$("characters"),scores:$("scores"),summary:$("summary"),echoes:$("echoes"),toast:$("toast"),loading:$("loading"),loadingText:$("loadingText")};
 
 boot();
 async function boot(){
   bind();
   if(!API){el.login.disabled=true;el.send.disabled=true;notice("API 代理尚未配置，请联系站点维护者",true);return}
   try{const r=await fetch("./data/scores.json");if(!r.ok)throw Error("评分模板加载失败");state.templates=await r.json()}catch(e){notice(e.message,true)}
+  const savedAccount=restoreSession();
+  if(savedAccount!==null){renderAccounts();showDashboard();notice("已恢复本机登录状态");await selectAccount(savedAccount)}
   try{const init=await waitFor(()=>window.initGeetest4,8000);initCaptcha(init)}catch{notice("人机验证组件加载失败，请刷新页面",true)}
 }
 function bind(){
@@ -20,7 +23,8 @@ function bind(){
   el.code.oninput=()=>el.code.value=el.code.value.replace(/\D/g,"").slice(0,6);
   el.send.onclick=()=>state.captcha?state.captcha.showBox():notice("人机验证尚未加载完成",true);
   el.form.onsubmit=login;
-  el.account.onchange=()=>selectAccount(Number(el.account.value));
+  el.account.onchange=()=>{const index=Number(el.account.value);persistSession(index);selectAccount(index)};
+  el.remember.onchange=()=>el.remember.checked?persistSession(Number(el.account.value)||0):clearSession();
   el.logout.onclick=logout;
 }
 function initCaptcha(init){
@@ -44,7 +48,7 @@ async function login(event){
     state.token=auth.data.token;busy(true,"正在读取游戏账号…");
     const roles=await request("/gamer/role/list",{gameId:GAME},state.token);
     if(!ok(roles)||!Array.isArray(roles.data)||!roles.data.length)throw Error(roles.msg||"未找到已绑定的鸣潮账号");
-    state.accounts=roles.data;renderAccounts();showDashboard();await selectAccount(0);
+    state.accounts=roles.data;if(el.remember.checked)persistSession(0);else clearSession();renderAccounts();showDashboard();await selectAccount(0);
   }catch(e){state.token="";notice(readError(e),true)}finally{el.login.disabled=false;busy(false)}
 }
 async function selectAccount(index){
@@ -57,7 +61,7 @@ async function selectAccount(index){
     state.characters=extractRoleList(result.data);
     if(!state.characters.length){busy(true,"展示列表为空，正在读取已拥有角色…");state.characters=await loadOwnedCharacters(body)}
     renderCharacters();
-  }catch(e){notice(readError(e),true)}finally{busy(false)}
+  }catch(e){if(isAuthError(e)){logout();notice("保存的登录状态已过期，请重新验证码登录",true)}else notice(readError(e),true)}finally{busy(false)}
 }
 async function loadOwnedCharacters(body){
   const refreshed=await request("/aki/calculator/refreshData",{serverId:body.serverId,roleId:body.roleId},state.token);
@@ -121,7 +125,11 @@ function scoreProp(prop,index,cost,t){
 function gradeFor(ratio,limits=[]){let index=0;limits.forEach((limit,i)=>{if(ratio>=Number(limit))index=i});return GRADES[Math.min(index,5)]}
 async function request(path,body,token="",extra={}){const base=DIRECT_PATHS.has(path)?KURO_API:API;if(!base)throw Error("API 代理尚未配置");const headers={source:"h5",devCode:random(32),"Content-Type":"application/x-www-form-urlencoded; charset=utf-8",...extra};if(token)headers.token=token;const response=await fetch(base+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit",cache:"no-store"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
 function accountBody(a){const roleId=String(a.roleId);return{gameId:GAME,serverId:a.serverId||(Number(roleId)>=2e8?SERVERS.overseas:SERVERS.cn),roleId}}
-function ok(r){return Number(r?.code)===200}function showDashboard(){el.loginView.hidden=true;el.dashboard.hidden=false;el.logout.hidden=false}function logout(){Object.assign(state,{token:"",accounts:[],account:null,characters:[]});el.code.value="";el.dashboard.hidden=true;el.loginView.hidden=false;el.logout.hidden=true;el.scores.hidden=true}
+function ok(r){return Number(r?.code)===200}function showDashboard(){el.loginView.hidden=true;el.dashboard.hidden=false;el.logout.hidden=false}function logout(){clearSession();Object.assign(state,{token:"",accounts:[],account:null,characters:[]});el.code.value="";el.dashboard.hidden=true;el.loginView.hidden=false;el.logout.hidden=true;el.scores.hidden=true}
+function persistSession(accountIndex=0){if(!el.remember.checked||!state.token||!state.accounts.length)return;try{localStorage.setItem(SESSION_KEY,JSON.stringify({token:state.token,accounts:state.accounts,accountIndex,savedAt:Date.now()}))}catch{notice("浏览器禁止本地存储，无法保存登录状态",true)}}
+function restoreSession(){try{const saved=JSON.parse(localStorage.getItem(SESSION_KEY)||"null");if(!saved?.token||!Array.isArray(saved.accounts)||!saved.accounts.length)return null;if(Date.now()-Number(saved.savedAt)>SESSION_TTL){clearSession();notice("本机登录状态已超过 7 天，请重新登录",true);return null}state.token=saved.token;state.accounts=saved.accounts;el.remember.checked=true;return Math.min(Math.max(Number(saved.accountIndex)||0,0),saved.accounts.length-1)}catch{clearSession();return null}}
+function clearSession(){try{localStorage.removeItem(SESSION_KEY)}catch{}}
+function isAuthError(error){return /登录已过期|重新登录|token.{0,6}失效|访问令牌不能为空/i.test(error?.message||"")}
 function busy(show,text="正在加载…"){el.loadingText.textContent=text;el.loading.hidden=!show}function notice(message,error=false){el.toast.textContent=message;el.toast.classList.toggle("error",error);el.toast.hidden=false;clearTimeout(notice.timer);notice.timer=setTimeout(()=>el.toast.hidden=true,5000)}
 function countdown(seconds){el.send.disabled=true;const timer=setInterval(()=>{el.send.textContent=`${seconds--} 秒`;if(seconds<0){clearInterval(timer);el.send.textContent="重新获取";el.send.disabled=false}},1000)}
 function random(length){const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";return Array.from({length},()=>chars[Math.floor(Math.random()*chars.length)]).join("")}
