@@ -1,4 +1,6 @@
-const API="https://api.kurobbs.com",GAME="3",CAPTCHA="ec4aa4174277d822d73f2442a165a2cd";
+const API=String(globalThis.ECHO_SCORE_CONFIG?.apiBase||"").replace(/\/+$/,"");
+const KURO_API="https://api.kurobbs.com",DIRECT_PATHS=new Set(["/user/getSmsCodeForH5","/user/sdkLoginForH5"]);
+const GAME="3",CAPTCHA="ec4aa4174277d822d73f2442a165a2cd";
 const SERVERS={cn:"76402e5b20be2c39f095a152090afddc",overseas:"919752ae5ea09c1ced910dd668a63ffb"};
 const GRADES=["c","b","a","s","ss","sss"];
 const ROVER={1501:"漂泊者·衍射",1502:"漂泊者·衍射",1604:"漂泊者·湮灭",1605:"漂泊者·湮灭",1406:"漂泊者·气动",1408:"漂泊者·气动"};
@@ -9,6 +11,7 @@ const el={loginView:$("loginView"),dashboard:$("dashboard"),form:$("loginForm"),
 boot();
 async function boot(){
   bind();
+  if(!API){el.login.disabled=true;el.send.disabled=true;notice("API 代理尚未配置，请联系站点维护者",true);return}
   try{const r=await fetch("./data/scores.json");if(!r.ok)throw Error("评分模板加载失败");state.templates=await r.json()}catch(e){notice(e.message,true)}
   try{const init=await waitFor(()=>window.initGeetest4,8000);initCaptcha(init)}catch{notice("人机验证组件加载失败，请刷新页面",true)}
 }
@@ -116,7 +119,7 @@ function scoreProp(prop,index,cost,t){
   if(["冷凝","衍射","导电","热熔","气动","湮灭"].includes(name.slice(0,2)))return Number(weights["属性伤害加成"]||0)*value;return Number(weights[name]||0)*value;
 }
 function gradeFor(ratio,limits=[]){let index=0;limits.forEach((limit,i)=>{if(ratio>=Number(limit))index=i});return GRADES[Math.min(index,5)]}
-async function request(path,body,token="",extra={}){const headers={source:"h5",devCode:random(32),"Content-Type":"application/x-www-form-urlencoded; charset=utf-8",...extra};if(token)headers.token=token;const response=await fetch(API+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit",cache:"no-store"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
+async function request(path,body,token="",extra={}){const base=DIRECT_PATHS.has(path)?KURO_API:API;if(!base)throw Error("API 代理尚未配置");const headers={source:"h5",devCode:random(32),"Content-Type":"application/x-www-form-urlencoded; charset=utf-8",...extra};if(token)headers.token=token;const response=await fetch(base+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit",cache:"no-store"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
 function accountBody(a){const roleId=String(a.roleId);return{gameId:GAME,serverId:a.serverId||(Number(roleId)>=2e8?SERVERS.overseas:SERVERS.cn),roleId}}
 function ok(r){return Number(r?.code)===200}function showDashboard(){el.loginView.hidden=true;el.dashboard.hidden=false;el.logout.hidden=false}function logout(){Object.assign(state,{token:"",accounts:[],account:null,characters:[]});el.code.value="";el.dashboard.hidden=true;el.loginView.hidden=false;el.logout.hidden=true;el.scores.hidden=true}
 function busy(show,text="正在加载…"){el.loadingText.textContent=text;el.loading.hidden=!show}function notice(message,error=false){el.toast.textContent=message;el.toast.classList.toggle("error",error);el.toast.hidden=false;clearTimeout(notice.timer);notice.timer=setTimeout(()=>el.toast.hidden=true,5000)}

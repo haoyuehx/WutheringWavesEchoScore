@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -36,6 +37,9 @@ def build(destination: Path) -> None:
     data.mkdir(exist_ok=True)
     output = data / "scores.json"
     output.write_text(json.dumps(load_templates(), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    proxy_url = os.environ.get("KURO_PROXY_URL", "").strip().rstrip("/")
+    config = f"globalThis.ECHO_SCORE_CONFIG=Object.freeze({{apiBase:{json.dumps(proxy_url)}}});\n"
+    (destination / "config.js").write_text(config, encoding="utf-8")
     (destination / ".nojekyll").touch()
     print(f"Built {destination} ({output.stat().st_size} byte score bundle)")
 
