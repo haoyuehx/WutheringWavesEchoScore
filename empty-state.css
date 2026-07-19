@@ -1,0 +1,29 @@
+.empty {
+  grid-column: 1 / -1;
+  padding: 52px 24px;
+  border: 1px dashed rgba(167, 226, 208, .22);
+  border-radius: 16px;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(20, 28, 30, .45);
+}
+
+.empty b {
+  display: block;
+  color: var(--text);
+  font: 400 22px Georgia, "Noto Serif SC", serif;
+}
+
+.empty p {
+  margin: 10px 0 22px;
+  font-size: 12px;
+}
+
+.empty button {
+  min-height: 42px;
+  padding: 0 20px;
+  border: 1px solid rgba(167, 226, 208, .35);
+  border-radius: 9px;
+  color: var(--mint);
+  background: rgba(167, 226, 208, .08);
+}

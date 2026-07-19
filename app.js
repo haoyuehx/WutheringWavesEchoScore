@@ -50,10 +50,34 @@ async function selectAccount(index){
     busy(true,"正在刷新角色数据…");const body=accountBody(account);
     const refreshed=await request("/aki/roleBox/akiBox/refreshData",body,state.token);if(!ok(refreshed))throw Error(refreshed.msg||"角色数据刷新失败");
     const result=await request("/aki/roleBox/akiBox/roleData",body,state.token);
-    if(!ok(result)||!Array.isArray(result.data?.roleList))throw Error(result.msg||"角色列表读取失败，请检查库街区展示设置");
-    state.characters=result.data.roleList;renderCharacters();
+    if(!ok(result))throw Error(result.msg||"角色列表读取失败");
+    state.characters=extractRoleList(result.data);
+    if(!state.characters.length){busy(true,"展示列表为空，正在读取已拥有角色…");state.characters=await loadOwnedCharacters(body)}
+    renderCharacters();
   }catch(e){notice(readError(e),true)}finally{busy(false)}
 }
+async function loadOwnedCharacters(body){
+  const refreshed=await request("/aki/calculator/refreshData",{serverId:body.serverId,roleId:body.roleId},state.token);
+  if(!ok(refreshed))throw Error(refreshed.msg||"已拥有角色数据刷新失败");
+  const [ownedResult,onlineResult]=await Promise.all([
+    request("/aki/calculator/queryOwnedRole",{serverId:body.serverId,roleId:body.roleId},state.token),
+    request("/aki/calculator/listRole",{},state.token),
+  ]);
+  if(!ok(ownedResult))throw Error(ownedResult.msg||"已拥有角色读取失败");
+  if(!ok(onlineResult))throw Error(onlineResult.msg||"角色资料读取失败");
+  const owned=new Set(extractArray(ownedResult.data).map(id=>String(typeof id==="object"?(id.roleId??id.id):id)));
+  return extractArray(onlineResult.data).filter(role=>owned.has(String(role.roleId))).map(role=>({...role,rolePicUrl:role.rolePicUrl||role.roleIconUrl}));
+}
+function extractRoleList(data){
+  const parsed=parseNested(data),candidates=[parsed,parsed?.roleList,parsed?.roles,parsed?.data?.roleList,parsed?.data?.roles,parsed?.roleData?.roleList];
+  return candidates.find(Array.isArray)||[];
+}
+function extractArray(data){
+  const parsed=parseNested(data);if(Array.isArray(parsed))return parsed;
+  for(const key of ["list","roleList","roles","records","ids","ownedRoleList"]){if(Array.isArray(parsed?.[key]))return parsed[key]}
+  if(parsed?.data!==undefined)return extractArray(parsed.data);return [];
+}
+function parseNested(value){let result=value;for(let i=0;i<3&&typeof result==="string";i++){try{result=JSON.parse(result)}catch{return result}}return result}
 async function selectCharacter(character,button){
   document.querySelectorAll(".character.active").forEach(node=>node.classList.remove("active"));button.classList.add("active");
   try{
@@ -67,9 +91,9 @@ async function selectCharacter(character,button){
 }
 function renderAccounts(){el.account.innerHTML=state.accounts.map((a,i)=>`<option value="${i}">${html(a.roleName)} · ${html(a.roleId)}</option>`).join("")}
 function renderCharacters(){
-  if(!state.characters.length){el.characters.innerHTML="<p>库街区暂未展示角色。</p>";return}
+  if(!state.characters.length){el.characters.innerHTML='<div class="empty"><b>没有读取到共鸣者</b><p>请先在库街区绑定鸣潮账号并刷新游戏数据，然后重新登录。</p><button type="button" id="retryCharacters">重新读取</button></div>';$("retryCharacters").onclick=()=>selectAccount(Number(el.account.value));return}
   el.characters.innerHTML="";
-  for(const char of state.characters){const button=document.createElement("button");button.type="button";button.className="character";button.innerHTML=`<img src="${url(char.rolePicUrl||char.roleIconUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer"><strong>${html(char.roleName)}</strong><small>Lv.${Number(char.level||0)} · 点击评分</small>`;button.onclick=()=>selectCharacter(char,button);el.characters.append(button)}
+  for(const char of state.characters){const button=document.createElement("button"),level=Number(char.level);button.type="button";button.className="character";button.innerHTML=`<img src="${url(char.rolePicUrl||char.roleIconUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer"><strong>${html(char.roleName)}</strong><small>${Number.isFinite(level)&&level>0?`Lv.${level} · `:""}点击评分</small>`;button.onclick=()=>selectCharacter(char,button);el.characters.append(button)}
 }
 function renderScores(detail){
   const echoes=detail.phantomData?.equipPhantomList?.filter(Boolean)||[];if(!echoes.length)throw Error("该角色没有可读取的声骸装备");
@@ -92,7 +116,7 @@ function scoreProp(prop,index,cost,t){
   if(["冷凝","衍射","导电","热熔","气动","湮灭"].includes(name.slice(0,2)))return Number(weights["属性伤害加成"]||0)*value;return Number(weights[name]||0)*value;
 }
 function gradeFor(ratio,limits=[]){let index=0;limits.forEach((limit,i)=>{if(ratio>=Number(limit))index=i});return GRADES[Math.min(index,5)]}
-async function request(path,body,token="",extra={}){const headers={source:"h5",devCode:state.devCode,"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8",...extra};if(token)headers.token=token;const response=await fetch(API+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();if(typeof result.data==="string"){try{result.data=JSON.parse(result.data)}catch{}}return result}
+async function request(path,body,token="",extra={}){const headers={source:"h5",devCode:state.devCode,"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8",...extra};if(token)headers.token=token;const response=await fetch(API+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
 function accountBody(a){const roleId=String(a.roleId);return{gameId:GAME,serverId:a.serverId||(Number(roleId)>=2e8?SERVERS.overseas:SERVERS.cn),roleId}}
 function ok(r){return Number(r?.code)===200}function showDashboard(){el.loginView.hidden=true;el.dashboard.hidden=false;el.logout.hidden=false}function logout(){Object.assign(state,{token:"",accounts:[],account:null,characters:[]});el.code.value="";el.dashboard.hidden=true;el.loginView.hidden=false;el.logout.hidden=true;el.scores.hidden=true}
 function busy(show,text="正在加载…"){el.loadingText.textContent=text;el.loading.hidden=!show}function notice(message,error=false){el.toast.textContent=message;el.toast.classList.toggle("error",error);el.toast.hidden=false;clearTimeout(notice.timer);notice.timer=setTimeout(()=>el.toast.hidden=true,5000)}

@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "score-templates"
-PUBLIC_FILES = ("index.html", "styles.css", "app.js", "favicon.png", "LICENSE")
+PUBLIC_FILES = ("index.html", "styles.css", "empty-state.css", "app.js", "favicon.png", "LICENSE")
 
 
 def load_templates() -> dict:
