@@ -2,7 +2,7 @@ const API="https://api.kurobbs.com",GAME="3",CAPTCHA="ec4aa4174277d822d73f2442a1
 const SERVERS={cn:"76402e5b20be2c39f095a152090afddc",overseas:"919752ae5ea09c1ced910dd668a63ffb"};
 const GRADES=["c","b","a","s","ss","sss"];
 const ROVER={1501:"漂泊者·衍射",1502:"漂泊者·衍射",1604:"漂泊者·湮灭",1605:"漂泊者·湮灭",1406:"漂泊者·气动",1408:"漂泊者·气动"};
-const state={token:"",devCode:random(32),accounts:[],account:null,characters:[],templates:null,captcha:null};
+const state={token:"",accounts:[],account:null,characters:[],templates:null,captcha:null};
 const $=id=>document.getElementById(id);
 const el={loginView:$("loginView"),dashboard:$("dashboard"),form:$("loginForm"),phone:$("phone"),code:$("code"),send:$("sendCode"),login:$("login"),logout:$("logout"),account:$("account"),characters:$("characters"),scores:$("scores"),summary:$("summary"),echoes:$("echoes"),toast:$("toast"),loading:$("loading"),loadingText:$("loadingText")};
 
@@ -116,7 +116,7 @@ function scoreProp(prop,index,cost,t){
   if(["冷凝","衍射","导电","热熔","气动","湮灭"].includes(name.slice(0,2)))return Number(weights["属性伤害加成"]||0)*value;return Number(weights[name]||0)*value;
 }
 function gradeFor(ratio,limits=[]){let index=0;limits.forEach((limit,i)=>{if(ratio>=Number(limit))index=i});return GRADES[Math.min(index,5)]}
-async function request(path,body,token="",extra={}){const headers={source:"h5",devCode:state.devCode,"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8",...extra};if(token)headers.token=token;const response=await fetch(API+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
+async function request(path,body,token="",extra={}){const headers={source:"h5",devCode:random(32),"Content-Type":"application/x-www-form-urlencoded; charset=utf-8",...extra};if(token)headers.token=token;const response=await fetch(API+path,{method:"POST",headers,body:new URLSearchParams(Object.entries(body).map(([k,v])=>[k,String(v)])),credentials:"omit",cache:"no-store"});if(!response.ok)throw Error(`库街区接口请求失败（HTTP ${response.status}）`);const result=await response.json();result.data=parseNested(result.data);return result}
 function accountBody(a){const roleId=String(a.roleId);return{gameId:GAME,serverId:a.serverId||(Number(roleId)>=2e8?SERVERS.overseas:SERVERS.cn),roleId}}
 function ok(r){return Number(r?.code)===200}function showDashboard(){el.loginView.hidden=true;el.dashboard.hidden=false;el.logout.hidden=false}function logout(){Object.assign(state,{token:"",accounts:[],account:null,characters:[]});el.code.value="";el.dashboard.hidden=true;el.loginView.hidden=false;el.logout.hidden=true;el.scores.hidden=true}
 function busy(show,text="正在加载…"){el.loadingText.textContent=text;el.loading.hidden=!show}function notice(message,error=false){el.toast.textContent=message;el.toast.classList.toggle("error",error);el.toast.hidden=false;clearTimeout(notice.timer);notice.timer=setTimeout(()=>el.toast.hidden=true,5000)}
